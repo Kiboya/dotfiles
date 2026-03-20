@@ -63,22 +63,37 @@ echo "==> Installing Ghostty..."
 if ! command -v ghostty &>/dev/null; then
     if [ "$PM" = "pacman" ]; then
         sudo pacman -S --noconfirm ghostty
+
     elif [ "$PM" = "dnf" ]; then
         sudo dnf install -y ghostty
+
     elif [ "$PM" = "brew" ]; then
         brew install --cask ghostty
+
     elif [ "$PM" = "apt" ]; then
-        # Ghostty is not in apt repos — snap is the most universal method
-        # and is verified to work on Kali, Debian, Ubuntu
-        if ! command -v snap &>/dev/null; then
-            sudo apt install -y snapd
-            # snapd needs a restart of the socket to work immediately
-            sudo systemctl enable --now snapd.socket 2>/dev/null || true
-            sudo ln -sf /var/lib/snapd/snap /snap 2>/dev/null || true
-            echo "snapd was just installed. If ghostty fails to install,"
-            echo "reboot and re-run this script — snapd sometimes needs a restart."
+        DISTRO_ID=$(grep "^ID=" /etc/os-release | cut -d= -f2 | tr -d '"')
+
+        if [ "$DISTRO_ID" = "ubuntu" ]; then
+            # mkasberg/ghostty-ubuntu — Ubuntu official installer
+            /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/mkasberg/ghostty-ubuntu/HEAD/install.sh)"
+
+        else
+            # dariogriffo/ghostty-debian — covers Debian, Kali, etc.
+            # Kali reports "kali-rolling" which isn't in the repo — map it to "sid"
+            if [ "$DISTRO_ID" = "kali" ]; then
+                DEBIAN_CODENAME="sid"
+            else
+                DEBIAN_CODENAME=$(lsb_release -sc)
+            fi
+
+            sudo curl -fsSL https://debian.griffo.io/EA0F721D231FDD3A0A17B9AC7808B4DD62C41256.asc \
+                | sudo gpg --dearmor -o /usr/share/keyrings/debian.griffo.io.gpg
+            echo "deb [signed-by=/usr/share/keyrings/debian.griffo.io.gpg] \
+                https://debian.griffo.io/apt $DEBIAN_CODENAME main" \
+                | sudo tee /etc/apt/sources.list.d/debian.griffo.io.list
+            sudo apt update
+            sudo apt install -y ghostty
         fi
-        sudo snap install ghostty --classic
     fi
 else
     echo "Ghostty already installed, skipping."
@@ -126,19 +141,24 @@ fi
 # ── JetBrainsMono Nerd Font ───────────────────────────────────────────
 echo "==> Installing JetBrainsMono Nerd Font..."
 FONT_DIR="$HOME/.local/share/fonts"
-mkdir -p "$FONT_DIR"
-curl -Lo /tmp/JetBrainsMono.zip \
-    "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/JetBrainsMono.zip"
-unzip -o /tmp/JetBrainsMono.zip -d "$FONT_DIR/JetBrainsMono"
-fc-cache -fv
-rm /tmp/JetBrainsMono.zip
+if [ ! -d "$FONT_DIR/JetBrainsMono" ]; then
+    mkdir -p "$FONT_DIR"
+    curl -Lo /tmp/JetBrainsMono.zip \
+        "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/JetBrainsMono.zip"
+    unzip -o /tmp/JetBrainsMono.zip -d "$FONT_DIR/JetBrainsMono"
+    fc-cache -fv
+    rm /tmp/JetBrainsMono.zip
+else
+    echo "JetBrainsMono Nerd Font already installed, skipping."
+fi
 
 # ── Stow dotfiles ─────────────────────────────────────────────────────
 echo "==> Stowing dotfiles..."
 cd "$DOTFILES_DIR"
 for pkg in fish starship ghostty btop; do
     if [ -d "$DOTFILES_DIR/$pkg" ]; then
-        stow "$pkg"
+        # --restow: safely re-creates symlinks, works on both fresh and existing installs
+        stow --restow "$pkg"
     else
         echo "  Skipping $pkg (not found in dotfiles)"
     fi
