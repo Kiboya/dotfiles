@@ -1,3 +1,5 @@
+"$schema" = 'https://starship.rs/config-schema.json'
+
 [aws]
 symbol = " "
 
@@ -122,6 +124,7 @@ CachyOS = " "
 CentOS = " "
 Debian = " "
 DragonFly = " "
+Elementary = " "
 Emscripten = " "
 EndeavourOS = " "
 Fedora = " "
@@ -130,6 +133,7 @@ Garuda = "󰛓 "
 Gentoo = " "
 HardenedBSD = "󰞌 "
 Illumos = "󰈸 "
+Ios = "󰀷 "
 Kali = " "
 Linux = " "
 Mabox = " "
@@ -156,6 +160,7 @@ Ubuntu = " "
 Unknown = " "
 Void = " "
 Windows = "󰍲 "
+Zorin = " "
 
 [package]
 symbol = "󰏗 "
