@@ -34,13 +34,6 @@ zoxide init --cmd cd fish | source
 starship init fish | source
 fzf --fish | source
 
-# ====== Starship transient prompt ======
-function starship_transient_prompt_func
-    echo ''
-    starship module character
-end
-enable_transience
-
 # ====== Command-not-found handler ======
 function __fish_command_not_found_handler --on-event fish_command_not_found
     echo "Command not found: $argv[1]"

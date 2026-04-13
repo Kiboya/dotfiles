@@ -102,10 +102,21 @@ fi
 # ── Neovim (latest stable, cross-distro) ─────────────────────────────
 echo "==> Installing Neovim..."
 if ! command -v nvim &>/dev/null; then
+    NVIM_INSTALL_DIR="/opt/nvim-linux-x86_64"
     NVIM_URL="https://github.com/neovim/neovim/releases/latest/download/nvim-linux-x86_64.tar.gz"
+
+    sudo rm -rf "$NVIM_INSTALL_DIR"
     curl -Lo /tmp/nvim.tar.gz "$NVIM_URL"
-    sudo tar -C /usr/local -xzf /tmp/nvim.tar.gz --strip-components=1
+    sudo tar -C /opt -xzf /tmp/nvim.tar.gz
     rm /tmp/nvim.tar.gz
+
+    # Wrapper script so VIMRUNTIME is always set regardless of shell or invocation context
+    sudo tee /usr/local/bin/nvim > /dev/null << EOF
+#!/usr/bin/env bash
+export VIMRUNTIME=${NVIM_INSTALL_DIR}/share/nvim/runtime
+exec ${NVIM_INSTALL_DIR}/bin/nvim "\$@"
+EOF
+    sudo chmod +x /usr/local/bin/nvim
 else
     echo "Neovim already installed, skipping."
 fi
