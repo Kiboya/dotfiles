@@ -7,15 +7,19 @@ DOTFILES_DIR="$(cd "$(dirname "$0")" && pwd)"
 if command -v apt &>/dev/null; then
     PM="apt"
     INSTALL="sudo apt install -y"
+    BUILD_PKGS="build-essential pkg-config fontconfig"
 elif command -v pacman &>/dev/null; then
     PM="pacman"
     INSTALL="sudo pacman -S --noconfirm"
+    BUILD_PKGS="base-devel fontconfig"
 elif command -v dnf &>/dev/null; then
     PM="dnf"
     INSTALL="sudo dnf install -y"
+    BUILD_PKGS="gcc make pkgconf-pkg-config fontconfig"
 elif command -v brew &>/dev/null; then
     PM="brew"
     INSTALL="brew install"
+    BUILD_PKGS=""
 else
     echo "Unsupported package manager" && exit 1
 fi
@@ -23,8 +27,9 @@ fi
 echo "==> Detected package manager: $PM"
 
 # ── System packages ───────────────────────────────────────────────────
+# build tools + fontconfig are needed later for `cargo install` (linking) and `fc-cache`
 echo "==> Installing system packages..."
-$INSTALL fish stow git curl unzip
+$INSTALL fish stow git curl unzip $BUILD_PKGS
 
 # ── fzf ──────────────────────────────────────────────────────────────
 echo "==> Installing fzf..."
@@ -83,7 +88,9 @@ if ! command -v ghostty &>/dev/null; then
             if [ "$DISTRO_ID" = "kali" ]; then
                 DEBIAN_CODENAME="sid"
             else
-                DEBIAN_CODENAME=$(lsb_release -sc)
+                # Read straight from /etc/os-release instead of lsb_release,
+                # which isn't installed by default on minimal Debian/Ubuntu.
+                DEBIAN_CODENAME=$(grep "^VERSION_CODENAME=" /etc/os-release | cut -d= -f2 | tr -d '"')
             fi
 
             sudo curl -fsSL https://debian.griffo.io/EA0F721D231FDD3A0A17B9AC7808B4DD62C41256.asc \
@@ -131,6 +138,35 @@ else
     echo "~/.config/nvim already exists, skipping NvChad setup."
 fi
 
+# ── Native package manager tools ────────────────────────────────────
+# These are packaged (and conflict-free) on every distro we support, so
+# installing them here is both much faster than a cargo build and avoids
+# eza's currently-broken crates.io dependency resolution (see below).
+# bat stays on cargo: on some Debian/Ubuntu releases its package installs
+# the binary as `batcat` instead of `bat`, which would break the
+# `alias cat='bat ...'` in config.fish.
+echo "==> Installing native CLI tools (eza, ripgrep, zoxide, starship, git-delta)..."
+for pkg in eza ripgrep zoxide starship git-delta; do
+    # command names differ from package names for a couple of these
+    case "$pkg" in
+        ripgrep) bin="rg" ;;
+        git-delta) bin="delta" ;;
+        *) bin="$pkg" ;;
+    esac
+
+    if command -v "$bin" &>/dev/null; then
+        echo "  $bin already installed, skipping."
+        continue
+    fi
+
+    case "$PM" in
+        apt) sudo apt install -y "$pkg" ;;
+        pacman) sudo pacman -S --noconfirm "$pkg" ;;
+        dnf) sudo dnf install -y "$pkg" ;;
+        brew) brew install "$pkg" ;;
+    esac
+done
+
 # ── Rust & cargo tools ───────────────────────────────────────────────
 echo "==> Installing Rust..."
 if ! command -v cargo &>/dev/null; then
@@ -139,7 +175,8 @@ if ! command -v cargo &>/dev/null; then
 fi
 
 echo "==> Installing cargo packages..."
-cargo install ast-grep bat eza fd-find ripgrep starship zoxide dipc
+# du-dust -> dust, procs -> procs: referenced in config.fish
+cargo install ast-grep bat fd-find dipc du-dust procs
 
 # ── uv (Python env manager) ───────────────────────────────────────────
 echo "==> Installing uv..."
@@ -166,14 +203,38 @@ fi
 # ── Stow dotfiles ─────────────────────────────────────────────────────
 echo "==> Stowing dotfiles..."
 cd "$DOTFILES_DIR"
+
+BACKUP_DIR="$HOME/.dotfiles-backup-$(date +%Y%m%d%H%M%S)"
+BACKED_UP=false
+
 for pkg in fish starship ghostty btop; do
     if [ -d "$DOTFILES_DIR/$pkg" ]; then
+        # A fresh OS/app install can leave real (non-symlink) config files in place,
+        # e.g. ~/.config/ghostty/config generated on first launch. stow refuses to
+        # touch those, so move them aside first instead of failing the whole script.
+        while IFS= read -r -d '' file; do
+            rel="${file#"$DOTFILES_DIR"/"$pkg"/}"
+            target="$HOME/$rel"
+            if [ -e "$target" ] && [ ! -L "$target" ]; then
+                mkdir -p "$(dirname "$BACKUP_DIR/$rel")"
+                mv "$target" "$BACKUP_DIR/$rel"
+                BACKED_UP=true
+            fi
+        done < <(find "$DOTFILES_DIR/$pkg" -type f -print0)
+
         # --restow: safely re-creates symlinks, works on both fresh and existing installs
-        stow --restow "$pkg"
+        # -t/--target is explicit: stow's default target is the *parent* of the
+        # directory it's run from, which is only $HOME by coincidence if this repo
+        # happens to be cloned straight into $HOME. Pin it so this works from any path.
+        stow --restow --target="$HOME" "$pkg"
     else
         echo "  Skipping $pkg (not found in dotfiles)"
     fi
 done
+
+if [ "$BACKED_UP" = true ]; then
+    echo "  Pre-existing configs backed up to $BACKUP_DIR"
+fi
 
 # ── Set fish as default shell ─────────────────────────────────────────
 echo "==> Setting fish as default shell..."
