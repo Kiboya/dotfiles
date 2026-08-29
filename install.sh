@@ -207,7 +207,7 @@ cd "$DOTFILES_DIR"
 BACKUP_DIR="$HOME/.dotfiles-backup-$(date +%Y%m%d%H%M%S)"
 BACKED_UP=false
 
-for pkg in fish starship ghostty btop; do
+for pkg in fish starship ghostty btop nvim; do
     if [ -d "$DOTFILES_DIR/$pkg" ]; then
         # A fresh OS/app install can leave real (non-symlink) config files in place,
         # e.g. ~/.config/ghostty/config generated on first launch. stow refuses to
@@ -246,4 +246,9 @@ echo ""
 echo "✓ Done! A few more things:"
 echo "  1. Log out and back in for the shell change to take effect"
 echo "  2. Run 'nvim' once to let NvChad finish installing plugins"
+echo "     (this also compiles the Catppuccin Frappe theme override in"
+echo "     chadrc.lua for the first time -- it only auto-compiles on that"
+echo "     first plugin install, so if you edit chadrc.lua's colors again"
+echo "     later on an already-installed nvim, force a recompile with:"
+echo "     nvim --headless -c \"lua require('base46').load_all_highlights()\" -c qa"
 echo "  3. If Ghostty was installed via snap and fails to launch, reboot first"
