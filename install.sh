@@ -145,8 +145,8 @@ fi
 # bat stays on cargo: on some Debian/Ubuntu releases its package installs
 # the binary as `batcat` instead of `bat`, which would break the
 # `alias cat='bat ...'` in config.fish.
-echo "==> Installing native CLI tools (eza, ripgrep, zoxide, starship, git-delta)..."
-for pkg in eza ripgrep zoxide starship git-delta; do
+echo "==> Installing native CLI tools (eza, ripgrep, zoxide, starship, git-delta, btop)..."
+for pkg in eza ripgrep zoxide starship git-delta btop; do
     # command names differ from package names for a couple of these
     case "$pkg" in
         ripgrep) bin="rg" ;;
