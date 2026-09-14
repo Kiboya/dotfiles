@@ -3,6 +3,14 @@ set -e
 
 DOTFILES_DIR="$(cd "$(dirname "$0")" && pwd)"
 
+# ── Pull latest ──────────────────────────────────────────────────────
+# Rerunning this script is the update mechanism: it's cheap because every
+# step below skips work that's already done.
+if [ -d "$DOTFILES_DIR/.git" ]; then
+    echo "==> Pulling latest dotfiles..."
+    git -C "$DOTFILES_DIR" pull --ff-only
+fi
+
 # ── Detect package manager ────────────────────────────────────────────
 if command -v apt &>/dev/null; then
     PM="apt"
@@ -35,10 +43,13 @@ $INSTALL fish stow git curl unzip $BUILD_PKGS
 echo "==> Installing fzf..."
 if [ ! -d "$HOME/.fzf" ]; then
     git clone --depth 1 https://github.com/junegunn/fzf.git ~/.fzf
-    ~/.fzf/install --all --no-bash --no-zsh
 else
-    echo "fzf already installed, skipping."
+    echo "fzf already cloned, skipping download."
 fi
+# Always rerun the shell-integration step: it's cheap, and it writes into
+# ~/.config/fish/conf.d, which lives inside the dotfiles repo (via the
+# symlink) and can end up wiped independently of ~/.fzf itself.
+~/.fzf/install --all --no-bash --no-zsh
 
 # ── fastfetch ─────────────────────────────────────────────────────────
 echo "==> Installing fastfetch..."
@@ -145,8 +156,8 @@ fi
 # bat stays on cargo: on some Debian/Ubuntu releases its package installs
 # the binary as `batcat` instead of `bat`, which would break the
 # `alias cat='bat ...'` in config.fish.
-echo "==> Installing native CLI tools (eza, ripgrep, zoxide, starship, git-delta, btop, yazi)..."
-for pkg in eza ripgrep zoxide starship git-delta btop yazi; do
+echo "==> Installing native CLI tools (eza, ripgrep, zoxide, git-delta, btop)..."
+for pkg in eza ripgrep zoxide git-delta btop; do
     # command names differ from package names for a couple of these
     case "$pkg" in
         ripgrep) bin="rg" ;;
@@ -167,6 +178,39 @@ for pkg in eza ripgrep zoxide starship git-delta btop yazi; do
     esac
 done
 
+# ── Starship ─────────────────────────────────────────────────────────
+# Not an apt package on Ubuntu (and availability varies enough across
+# distros generally), so use the official cross-platform installer.
+echo "==> Installing starship..."
+if ! command -v starship &>/dev/null; then
+    curl -sS https://starship.rs/install.sh | sh -s -- -y
+else
+    echo "starship already installed, skipping."
+fi
+
+# ── snapd ────────────────────────────────────────────────────────────
+# Only needed on apt/dnf: yazi isn't in Ubuntu's apt repos, and a growing
+# number of other tools ship a snap. pacman/brew have yazi natively, so
+# they skip snap entirely.
+if { [ "$PM" = "apt" ] || [ "$PM" = "dnf" ]; } && ! command -v snap &>/dev/null; then
+    echo "==> Installing snapd..."
+    $INSTALL snapd
+    sudo systemctl enable --now snapd.socket 2>/dev/null || true
+    sudo ln -sf /var/lib/snapd/snap /snap 2>/dev/null || true
+fi
+
+# ── yazi ─────────────────────────────────────────────────────────────
+echo "==> Installing yazi..."
+if ! command -v yazi &>/dev/null; then
+    case "$PM" in
+        apt|dnf) sudo snap install yazi --classic ;;
+        pacman) sudo pacman -S --noconfirm yazi ;;
+        brew) brew install yazi ;;
+    esac
+else
+    echo "yazi already installed, skipping."
+fi
+
 # ── Rust & cargo tools ───────────────────────────────────────────────
 echo "==> Installing Rust..."
 if ! command -v cargo &>/dev/null; then
@@ -175,8 +219,16 @@ if ! command -v cargo &>/dev/null; then
 fi
 
 echo "==> Installing cargo packages..."
-# du-dust -> dust, procs -> procs: referenced in config.fish
-cargo install ast-grep bat fd-find dipc du-dust procs
+# crate name -> binary name, since a couple of these differ
+for entry in ast-grep:ast-grep bat:bat fd-find:fd dipc:dipc du-dust:dust procs:procs; do
+    crate="${entry%%:*}"
+    bin="${entry##*:}"
+    if command -v "$bin" &>/dev/null; then
+        echo "  $bin already installed, skipping."
+    else
+        cargo install "$crate"
+    fi
+done
 
 # ── uv (Python env manager) ───────────────────────────────────────────
 echo "==> Installing uv..."
@@ -216,9 +268,17 @@ for pkg in fish starship ghostty btop nvim yazi; do
             rel="${file#"$DOTFILES_DIR"/"$pkg"/}"
             target="$HOME/$rel"
             if [ -e "$target" ] && [ ! -L "$target" ]; then
-                mkdir -p "$(dirname "$BACKUP_DIR/$rel")"
-                mv "$target" "$BACKUP_DIR/$rel"
-                BACKED_UP=true
+                # A symlink further up the path (e.g. a whole-directory stow
+                # fold like ~/.config/fish -> dotfiles/fish/.config/fish)
+                # means $target and $file can resolve to the exact same
+                # real file even though the leaf itself isn't a symlink.
+                # Only back up genuine conflicts, not the repo's own file
+                # reached through its own fold.
+                if [ "$(realpath -m "$target")" != "$(realpath -m "$file")" ]; then
+                    mkdir -p "$(dirname "$BACKUP_DIR/$rel")"
+                    mv "$target" "$BACKUP_DIR/$rel"
+                    BACKED_UP=true
+                fi
             fi
         done < <(find "$DOTFILES_DIR/$pkg" -type f -print0)
 
@@ -239,8 +299,12 @@ fi
 # ── Set fish as default shell ─────────────────────────────────────────
 echo "==> Setting fish as default shell..."
 FISH_PATH=$(which fish)
-grep -q "$FISH_PATH" /etc/shells || echo "$FISH_PATH" | sudo tee -a /etc/shells
-chsh -s "$FISH_PATH"
+if [ "$SHELL" != "$FISH_PATH" ]; then
+    grep -q "$FISH_PATH" /etc/shells || echo "$FISH_PATH" | sudo tee -a /etc/shells
+    sudo chsh -s "$FISH_PATH" "$(whoami)"
+else
+    echo "fish already the default shell, skipping."
+fi
 
 echo ""
 echo "✓ Done! A few more things:"
