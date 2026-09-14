@@ -50,6 +50,10 @@ fi
 # ~/.config/fish/conf.d, which lives inside the dotfiles repo (via the
 # symlink) and can end up wiped independently of ~/.fzf itself.
 ~/.fzf/install --all --no-bash --no-zsh
+# Belt-and-suspenders: fzf's installer doesn't reliably get its own binary
+# onto PATH for fish specifically, so symlink it into a directory that's
+# already on PATH for every shell.
+sudo ln -sf "$HOME/.fzf/bin/fzf" /usr/local/bin/fzf
 
 # ── fastfetch ─────────────────────────────────────────────────────────
 echo "==> Installing fastfetch..."
